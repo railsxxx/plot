@@ -82,15 +82,14 @@ function quotesGenerator() {
   }
 };
 
-  function Point(x,y) {
-  this.x=x; 
-  this.y=y;
-  };
-
-let trade = {
-  type: '',
-  open : 0,
-  close : 0
+function Point(x, y) {
+  this.x = x;
+  this.y = y;
+};
+function Trade(type, open) {
+  this.type = type;
+  this.open = open;
+  this.close;
 };
 let tradesBuy = [];
 let tradesSell = [];
@@ -99,7 +98,7 @@ function tradeGenerator() {
   buy.x = buy.y = [0];
   sell.x = sell.y = [0];
 
-  for(let i=0;i<quotes.length;i++){
+  for (let i = 0; i < quotes.length; i++) {
 
   }
 
