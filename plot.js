@@ -1,7 +1,7 @@
 
 //https://plot.ly/javascript/plotlyjs-function-reference/#plotlyextendtraces
 
-// const md = require("./model.js");
+const md = require("./model.js");
 // const rand = md.rand;
 
 // Plot ###########################################
@@ -23,7 +23,7 @@ function initPlot(graph) {
     mode: 'lines+markers',
     marker: { color: 'blue', size: 2 },
     line: {
-      width: 1 , 
+      width: 1,
       shape: 'vh'
     },
     connectgaps: false,
@@ -101,15 +101,16 @@ function tradeGenerator() {
   buy.x.length = buy.y.length = 0;
   sell.x.length = sell.y.length = 0;
   // console.log(buy);
-    let trade;
+  let trade;
   // let tradeCount =0, tradeCountMax = 10;
   for (let i = 1; i < quotes.length; i++) {
-    if(quotes[i]>quotes[i-1]){
+    if (quotes[i] > quotes[i - 1]) {
       // buy
-      if(trade && trade.type == 'sell'){
-        trade.close = new Point(i,quotes[i]);  
-        let id = tradesSell.indexOf(trade);
-        tradesSell.splice(id,1);
+      if (trade && trade.type == 'sell') {
+        trade.close = new Point(i, quotes[i]);
+        Balance(trade);
+        // let id = tradesSell.indexOf(trade);
+        // tradesSell.splice(id,1);
         sell.x.push(trade.open.x);
         sell.y.push(trade.open.y);
         sell.x.push(trade.close.x);
@@ -122,17 +123,17 @@ function tradeGenerator() {
         // tradeCount++;
         // if (tradeCount >=tradeCountMax)break;
       }
-      if(!trade)
-      {
-        trade = new Trade('buy', new Point(i,quotes[i]));
-        tradesBuy.push(trade);  
+      if (!trade) {
+        trade = new Trade('buy', new Point(i, quotes[i]));
+        tradesBuy.push(trade);
       }
     }
-    if(quotes[i]<quotes[i-1]){
-      if(trade && trade.type == "buy"){
-        trade.close = new Point(i,quotes[i]);  
-        let id = tradesBuy.indexOf(trade);
-        tradesBuy.splice(id,1);
+    if (quotes[i] < quotes[i - 1]) {
+      if (trade && trade.type == "buy") {
+        trade.close = new Point(i, quotes[i]);
+        Balance(trade);
+        // let id = tradesBuy.indexOf(trade);
+        // tradesBuy.splice(id,1);
         buy.x.push(trade.open.x);
         buy.y.push(trade.open.y);
         buy.x.push(trade.close.x);
@@ -145,9 +146,8 @@ function tradeGenerator() {
         // tradeCount++;
         // if (tradeCount >=tradeCountMax)break;
       }
-      if(!trade)
-      {
-        trade = new Trade('sell', new Point(i,quotes[i]));
+      if (!trade) {
+        trade = new Trade('sell', new Point(i, quotes[i]));
         tradesSell.push(trade);
       }
     }
@@ -158,11 +158,33 @@ function tradeGenerator() {
   // sell.x = [10, 25, null, 50, 60];
   // sell.y = [quotes[10], quotes[25], null, quotes[50], quotes[60]];
 }
+// Balance ###########################################
+let balance = 0;
 
+function Balance(trade) {
+  if (trade.type == 'buy') {
+    balance += trade.close.y - trade.open.y;
+    let id = tradesBuy.indexOf(trade);
+    tradesBuy.splice(id, 1);
+  }
+  if (trade.type == 'sell') {
+    balance += trade.open.y - trade.close.y;
+    let id = tradesSell.indexOf(trade);
+    tradesSell.splice(id, 1);
+  }
+}
+
+function showBalance() {
+  console.log("Balance: " + balance);
+}
 // Run ###########################################
 function showPlot(el) {
   quotesGenerator();
   tradeGenerator();
   initPlot(el);
   //extendPlot(el);
+  showBalance()
 }
+
+// exports #######################################
+exports.showPlot = showPlot;
