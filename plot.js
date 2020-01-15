@@ -4,6 +4,7 @@
 // const md = require("./model.js");
 // const rand = md.rand;
 
+// Plot ###########################################
 let quotes = [];
 let buy = { x: [], y: [] };
 let sell = { x: [], y: [] };
@@ -22,7 +23,7 @@ function initPlot(graph) {
     mode: 'lines+markers',
     marker: { color: 'blue', size: 2 },
     line: {
-      width: 1,
+      width: 1 , 
       shape: 'vh'
     },
     connectgaps: false,
@@ -36,7 +37,7 @@ function initPlot(graph) {
     marker: { color: 'red', size: 2 },
     line: {
       width: 1,
-      shape: 'hv'
+      shape: 'vh'
     },
     connectgaps: false,
     type: 'scatter',
@@ -70,6 +71,8 @@ function initPlot(graph) {
 //   }, 1000);
 // }
 
+// Quotes ###########################################
+
 function rand() {
   return Math.random();
 };
@@ -81,7 +84,7 @@ function quotesGenerator() {
     quotes.push(quote);
   }
 };
-
+// Trades ###########################################
 function Point(x, y) {
   this.x = x;
   this.y = y;
@@ -95,22 +98,71 @@ let tradesBuy = [];
 let tradesSell = [];
 
 function tradeGenerator() {
-  buy.x = buy.y = [0];
-  sell.x = sell.y = [0];
-
-  for (let i = 0; i < quotes.length; i++) {
-
+  buy.x.length = buy.y.length = 0;
+  sell.x.length = sell.y.length = 0;
+  // console.log(buy);
+    let trade;
+  // let tradeCount =0, tradeCountMax = 10;
+  for (let i = 1; i < quotes.length; i++) {
+    if(quotes[i]>quotes[i-1]){
+      // buy
+      if(trade && trade.type == 'sell'){
+        trade.close = new Point(i,quotes[i]);  
+        let id = tradesSell.indexOf(trade);
+        tradesSell.splice(id,1);
+        sell.x.push(trade.open.x);
+        sell.y.push(trade.open.y);
+        sell.x.push(trade.close.x);
+        sell.y.push(trade.close.y);
+        sell.x.push(null);
+        sell.y.push(null);
+        // console.log(trade);
+        // console.log(sell);
+        trade = undefined;
+        // tradeCount++;
+        // if (tradeCount >=tradeCountMax)break;
+      }
+      if(!trade)
+      {
+        trade = new Trade('buy', new Point(i,quotes[i]));
+        tradesBuy.push(trade);  
+      }
+    }
+    if(quotes[i]<quotes[i-1]){
+      if(trade && trade.type == "buy"){
+        trade.close = new Point(i,quotes[i]);  
+        let id = tradesBuy.indexOf(trade);
+        tradesBuy.splice(id,1);
+        buy.x.push(trade.open.x);
+        buy.y.push(trade.open.y);
+        buy.x.push(trade.close.x);
+        buy.y.push(trade.close.y);
+        buy.x.push(null);
+        buy.y.push(null);
+        // console.log(trade);
+        // console.log(buy);
+        trade = undefined;
+        // tradeCount++;
+        // if (tradeCount >=tradeCountMax)break;
+      }
+      if(!trade)
+      {
+        trade = new Trade('sell', new Point(i,quotes[i]));
+        tradesSell.push(trade);
+      }
+    }
   }
 
-  buy.x = [25, 50, null, 60, 80];
-  buy.y = [quotes[25], quotes[50], null, quotes[60], quotes[80]];
-  sell.x = [10, 25, null, 50, 60];
-  sell.y = [quotes[10], quotes[25], null, quotes[50], quotes[60]];
+  // buy.x = [25, 50, null, 60, 80];
+  // buy.y = [quotes[25], quotes[50], null, quotes[60], quotes[80]];
+  // sell.x = [10, 25, null, 50, 60];
+  // sell.y = [quotes[10], quotes[25], null, quotes[50], quotes[60]];
 }
 
-function showPlot() {
+// Run ###########################################
+function showPlot(el) {
   quotesGenerator();
   tradeGenerator();
-  initPlot('graph');
-  //extendPlot('graph');
+  initPlot(el);
+  //extendPlot(el);
 }
