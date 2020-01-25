@@ -41,8 +41,8 @@
     buy2.x = [].concat.apply([], arr1.concat(arr2));
 
     arr1 = trades2.Buy.map((trade) => [trade.open.y, trade.close.y, null]);
-    // arr2 = trades2.BuyOpen.map((trade) => [trade.open.y, trade.open.y + 1, null]);
-    arr2 = trades2.BuyOpen.map((trade) => [trade.open.y, trade.open.y + trade.open.target, null]);
+    arr2 = trades2.BuyOpen.map((trade) => [trade.open.y, trade.open.y + 1, null]);
+    // arr2 = trades2.BuyOpen.map((trade) => [trade.open.y, trade.open.y + trade.open.target, null]);
     buy2.y = [].concat.apply([], arr1.concat(arr2));
 
     let sell2 = {};
@@ -51,8 +51,8 @@
     sell2.x = [].concat.apply([], arr1.concat(arr2));
 
     arr1 = trades2.Sell.map((trade) => [trade.open.y, trade.close.y, null]);
-    // arr2 = trades2.SellOpen.map((trade) => [trade.open.y, trade.open.y - 1, null]);
-    arr2 = trades2.SellOpen.map((trade) => [trade.open.y, trade.open.y - trade.open.target, null]);
+    arr2 = trades2.SellOpen.map((trade) => [trade.open.y, trade.open.y - 1, null]);
+    // arr2 = trades2.SellOpen.map((trade) => [trade.open.y, trade.open.y - trade.open.target, null]);
     sell2.y = [].concat.apply([], arr1.concat(arr2));
 
     let balance2 = {};
@@ -236,6 +236,7 @@
       quote += rand() < 0.5 ? -1 : 1;
       quotes.push(quote);
     }
+    console.log(quotes);
     return quotes;
   }
   function quotesTest(steps) {
@@ -275,11 +276,12 @@
     this.target = undefined;
     this.pair = undefined;
   }
+  let tradeCount = 0;
   Trade.prototype.openAt = function(index, quote) {
     this.open = new Point(index, quote);
-    if (this.type == 'buy') this.target = quote + 1;
-    if (this.type == 'sell') this.target = quote - 1;
-    this.id = index + "|" + quote;
+    // if (this.type == 'buy') this.target = quote + 1;
+    // if (this.type == 'sell') this.target = quote - 1;
+    this.id = index + "|" + quote + "|" + ++tradeCount;
     return this;
   }
   Trade.prototype.closeAt = function(index, quote) {
@@ -324,6 +326,8 @@
     this.SellBelowQuote = 0;
     this.BuyHighest = undefined;
     this.SellLowest = undefined;
+    this.breakevenBuyPair = undefined;
+    this.breakevenSellPair = undefined;
   }
   Trades.prototype.buy = function(index, quote) {
     let trade = (new Trade('buy')).openAt(index, quote);
@@ -362,10 +366,40 @@
     return this.SellOpen.find(el => el.target.y == quote);
   }
   Trades.prototype.updateEquity = function(quote) {
-    let total = 0;
-    this.BuyOpen.forEach(el => total += quote - el.open.y);
-    this.SellOpen.forEach(el => total += el.open.y - quote);
-    this.equity.push(total);
+    let equity = 0;
+    let breakevenBuyPair = breakevenBuyPairCount = 0;
+    let breakevenSellPair = breakevenSellPairCount = 0;
+    this.BuyOpen.forEach(trade => {
+      equity += quote - trade.open.y;
+      if (trade.pair) {
+        breakevenBuyPairCount++;
+        breakevenBuyPair += trade.open.y;
+      }
+    });
+    this.SellOpen.forEach(trade => {
+      equity += trade.open.y - quote;
+      if (trade.pair) {
+        breakevenSellPairCount++;
+        breakevenSellPair += trade.open.y;
+      }
+    });
+    this.equity.push(equity);
+    this.breakevenBuyPair = breakevenBuyPair / breakevenBuyPairCount;
+    this.breakevenSellPair = breakevenSellPair / breakevenSellPairCount;
+  }
+  Trades.prototype.closeAllOpenBuyProfitNoPair = function(index, quote) {
+    this.BuyOpen.forEach(trade => {
+      if (!trade.pair && trade.getProfitOpen(quote) >= 0) {
+        this.close(trade, index, quote)
+      }
+    });
+  }
+  Trades.prototype.closeAllOpenSellProfitNoPair = function(index, quote) {
+    this.SellOpen.forEach(trade => {
+      if (!trade.pair && trade.getProfitOpen(quote) >= 0) {
+        this.close(trade, index, quote)
+      }
+    });
   }
   Trades.prototype.closeAllOpenBuyProfit = function(index, quote) {
     this.BuyOpen.forEach(trade => {
@@ -397,7 +431,7 @@
     });
     this.SellOpen.length = 0;
   }
-  Trades.prototype.closeAllOpen = function(index, quote) {
+  Trades.prototype.closeAllOpenTrades = function(index, quote) {
     this.closeAllOpenBuy(index, quote);
     this.closeAllOpenSell(index, quote);
   }
@@ -493,6 +527,7 @@
       // sell  
       if (quotes[i] < quotes[i - 1]) {
         trades.closeAllOpenBuy(i, quotes[i]);
+
         trade = trades.sell(i, quotes[i]);
       }
     }
@@ -503,22 +538,47 @@
 
   function strategySimple3(quotes) {
     trades = new Trades();
+    tradeCount = 0;
     let trade = undefined;
+    let pairTrade = undefined;
     let i = 0;
     for (i = 1; i < quotes.length; i++) {
       trades.updateEquity(quotes[i]);
+      console.log("index: " + i);
+      console.log("breakevenBuyPair: " + trades.breakevenBuyPair);
+      console.log("breakevenSellPair: " + trades.breakevenSellPair);
+      console.log(trade);
       // buy
       if (quotes[i] > quotes[i - 1]) {
-        trades.closeAllOpenSellProfit(i, quotes[i]);
-
-        trades.buy(i, quotes[i]);
+        trades.closeAllOpenSellProfitNoPair(i, quotes[i]);
+        // create and register pair
+        if (trade && trade.type == 'sell' && !trade.pair) {
+          pairTrade = trades.buy(i, quotes[i]);
+          trade.pair = pairTrade;
+          pairTrade.pair = trade;
+        }
+        trade = pairTrade;
+        // create buy trade if no pairTrade
+        if (!trade)
+          trade = trades.buy(i, quotes[i]);
       }
       // sell  
       if (quotes[i] < quotes[i - 1]) {
-        trades.closeAllOpenBuyProfit(i, quotes[i]);
+        trades.closeAllOpenBuyProfitNoPair(i, quotes[i]);
 
-        trade = trades.sell(i, quotes[i]);
+        // create and register pair
+        if (trade && trade.type == 'buy' && !trade.pair) {
+          pairTrade = trades.sell(i, quotes[i]);
+          trade.pair = pairTrade;
+          pairTrade.pair = trade;
+        }
+        trade = pairTrade;
+        // create sell trade if no pairTrade
+        if (!trade)
+          trade = trades.sell(i, quotes[i]);
       }
+      console.log(pairTrade);
+      pairTrade = undefined;
     }
     // close last trade at end of quotes
     trades.close(trade, i - 1, quotes[i - 1]);
