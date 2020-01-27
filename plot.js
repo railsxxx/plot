@@ -405,7 +405,7 @@
     let trade;
     for (let i = 0; i < array.length; i++) {
       trade = array[i];
-      if (predicate(trade)) {
+      if (predicate(trade, index, quote)) {
         this.close(trade, index, quote);
         i--;  //array reduced by one trade;
       }
@@ -542,6 +542,7 @@
     }
     // close last trade at end of quotes
     trades.close(trade, i - 1, quotes[i - 1]);
+    trades.updateEquity(quotes[i - 1]);
     return trades;
   }
 
@@ -566,6 +567,7 @@
     }
     // close last trade at end of quotes
     trades.close(trade, i - 1, quotes[i - 1]);
+    trades.updateEquity(quotes[i - 1]);
     return trades;
   }
 
@@ -614,8 +616,78 @@
     // close all open trades at end of quotes
     trades.closeAllOpenBuyNoPair(i - 1, quotes[i - 1]);
     trades.closeAllOpenSellNoPair(i - 1, quotes[i - 1]);
+    trades.updateEquity(quotes[i - 1]);
     return trades;
   }
+
+  function strategySimple_2Steps(quotes) {
+    trades = new Trades();
+    let trade = undefined;
+    let i = 0;
+    for (i = 1; i < quotes.length; i++) {
+      trades.updateEquity(quotes[i]);
+      // buy
+      if (quotes[i] > quotes[i - 1]) {
+        if (trade && trade.type == 'sell' && trade.open.x + 2 <= i) {
+          trades.close(trade, i, quotes[i]);
+          trade = undefined;
+        }
+        if (!trade) {
+          trade = trades.buy(i, quotes[i]);
+        }
+      }
+      // sell  
+      if (quotes[i] < quotes[i - 1]) {
+        if (trade && trade.type == "buy" && trade.open.x + 2 <= i) {
+          trades.close(trade, i, quotes[i]);
+          trade = undefined;
+        }
+        if (!trade) {
+          trade = trades.sell(i, quotes[i]);
+        }
+      }
+    }
+    // close last trade at end of quotes
+    trades.close(trade, i - 1, quotes[i - 1]);
+    trades.updateEquity(quotes[i - 1]);
+    return trades;
+  }
+
+  function strategySimple2_2Steps(quotes) {
+    trades = new Trades();
+    let trade = undefined;
+    let tradeLast = undefined;
+    let i = 0;
+    for (i = 1; i < quotes.length; i++) {
+      trades.updateEquity(quotes[i]);
+      // // close trade after 2 steps
+      if (tradeLast) {
+        trades.close(tradeLast, i, quotes[i]);
+      }
+      if (trade) {
+        tradeLast = trade;
+      }
+      // buy
+      if (quotes[i] > quotes[i - 1]) {
+        // trades.closeAllOpenSell(i, quotes[i]);
+        // trades.closeAllOpenTradeIf(i, quotes[i], trades.SellOpen, (trade, i) => trade.open.x + 2 <= i);
+
+        trade = trades.buy(i, quotes[i]);
+      }
+      // sell  
+      if (quotes[i] < quotes[i - 1]) {
+        // trades.closeAllOpenBuy(i, quotes[i]);
+        // trades.closeAllOpenTradeIf(i, quotes[i], trades.BuyOpen, (trade, i) => trade.open.x + 2 <= i);
+
+        trade = trades.sell(i, quotes[i]);
+      }
+    }
+    // close last trade at end of quotes
+    trades.close(trade, i - 1, quotes[i - 1]);
+    trades.updateEquity(quotes[i - 1]);
+    return trades;
+  }
+
 
 
   // Run  ###########################################
@@ -625,11 +697,14 @@
     let quotes = stepsQuote;
     let tradesSimple = strategySimple(quotes);
     // let trades2 = strategySimple2(quotes);
-    let trades2 = strategySimple3(quotes);
+    // let trades2 = strategySimple3(quotes);
+    // let trades2 = strategySimple_2Steps(quotes);
+    let trades2 = strategySimple2_2Steps(quotes);
     // let trades2 = strategySimple(quotes);
     // let trades2 = strategy2(quotes);
     // let trades2 = strategy3(quotes);
     // let trades2 = strategyPair(quotes);
+
 
     initPlot(el, quotes, tradesSimple, trades2);
   }
