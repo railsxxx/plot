@@ -683,7 +683,49 @@
       }
     }
     // close last trade at end of quotes
-    trades.close(trade, i - 1, quotes[i - 1]);
+    // trades.close(trade, i - 1, quotes[i - 1]);
+    trades.closeAllOpenTrades();
+    trades.updateEquity(quotes[i - 1]);
+    return trades;
+  }
+  function strategySimple4(quotes) {
+    trades = new Trades();
+    let trade = undefined;
+    let i = 0;
+    for (i = 1; i < quotes.length; i++) {
+      trades.updateEquity(quotes[i]);
+      trades.updateTradeCount(quotes[i]);
+      // buy
+      if (quotes[i] > quotes[i - 1]) {
+        trade = trades.isOpenSellAt(i, quotes[i]);
+        if (trade) {
+          trades.close(trade, i, quotes[i]);
+        } else {
+          trade = trades.SellLowest;
+          if (trade) {
+            trades.close(trade, i, quotes[i]);
+          } else {
+            trades.buy(i, quotes[i]);
+          }
+        }
+      }
+      // sell  
+      if (quotes[i] < quotes[i - 1]) {
+        trade = trades.isOpenBuyAt(i, quotes[i]);
+        if (trade) {
+          trades.close(trade, i, quotes[i]);
+        } else {
+          trade = trades.BuyHighest;
+          if (trade) {
+            trades.close(trade, i, quotes[i]);
+          } else {
+            trades.sell(i, quotes[i]);
+          }
+        }
+      }
+    }
+    // close trades at end of quotes
+    trades.closeAllOpenTrades(i - 1, quotes[i - 1]);
     trades.updateEquity(quotes[i - 1]);
     return trades;
   }
@@ -699,7 +741,8 @@
     // let trades2 = strategySimple2(quotes);
     // let trades2 = strategySimple3(quotes);
     // let trades2 = strategySimple_2Steps(quotes);
-    let trades2 = strategySimple2_2Steps(quotes);
+    // let trades2 = strategySimple2_2Steps(quotes);
+    let trades2 = strategySimple4(quotes);
     // let trades2 = strategySimple(quotes);
     // let trades2 = strategy2(quotes);
     // let trades2 = strategy3(quotes);
