@@ -716,7 +716,6 @@
           pairTrade = trades.buy(i, quotes[i]);
           pair = pairs.add(pairTrade, trade);
           // trades.close(trade, i, quotes[i]);
-          hasPair = true;
           if ((trades.equity[i] + trades.balance.total) > minProfit) {
             trades.closeAllOpenTrades(i, quotes[i]);
             trades.balance.total = 0;
