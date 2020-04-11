@@ -274,6 +274,7 @@
     this.stop = undefined;
     this.target = undefined;
     this.pair = undefined;
+    this.loss = undefined;
   }
   let tradeID = 0;
   Trade.prototype.openAt = function(index, quote) {
@@ -557,23 +558,116 @@
   }
 
   // Stack ###########################################
+  function Layer() {
+    this.first = undefined;
+    this.buy = undefined;
+    this.sell = undefined;
+  }
+  Layer.prototype.add = function(trade) {
+    if (this.first == undefined) this.first = trade;
+    if (trade.type == 'buy') this.buy = trade;
+    if (trade.type == 'sell') this.sell = trade;
+    return this;
+  }
+  Layer.prototype.delete = function(trade) {
+    if (this.first == trade) this.first = undefined;
+    if (trade.type == 'buy') this.buy = undefined;
+    if (trade.type == 'sell') this.sell = undefined;
+    return this;
+  }
+  Layer.prototype.isEmpty = function() {
+    if (!this.first && !this.buy && !this.sell) return true;
+    return false;
+  }
+
   function Stack() {
     this.batch = {};
   }
   Stack.prototype.add = function(trade) {
-    this.batch[trade.open.y] = trade;
+    if (this.batch[trade.open.y]) {
+      this.batch[trade.open.y].add(trade);
+    } else {
+      this.batch[trade.open.y] = (new Layer()).add(trade);
+    }
+  }
+  Stack.prototype.getBuyAt = function(quote) {
+    if (this.batch[quote]) return this.batch[quote].buy;
+    else return undefined;
+  }
+  Stack.prototype.getSellAt = function(quote) {
+    if (this.batch[quote]) return this.batch[quote].sell;
+    else return undefined;
   }
   Stack.prototype.getTradeAt = function(quote) {
-    return this.batch[quote];
+    if (this.batch[quote]) return this.batch[quote].first;
+    else return undefined;
   }
-  // Stack.prototype.getCount = function() {
-  //   return Object.keys(this.batch).length;
-  // }
   Stack.prototype.delete = function(trade) {
-    delete this.batch[trade.open.y];
+    if (this.batch[trade.open.y]) {
+      this.batch[trade.open.y].delete(trade);
+      if (this.batch[trade.open.y].isEmpty()) delete this.batch[trade.open.y];
+    }
   }
   Stack.prototype.deleteAll = function() {
     this.batch = {};
+  }
+  Stack.prototype.getWeightBuyAbove = function(quote) {
+    let countSell = countBuy = 0;
+    let keys = Object.keys(this.batch);
+    for (let key of keys) {
+      if (key >= quote) {
+        if (this.batch[key].sell) countSell++;
+        if (this.batch[key].buy) countBuy++;
+      }
+    }
+    return countBuy - countSell;
+  }
+  Stack.prototype.getWeightSellBelow = function(quote) {
+    let countSell = countBuy = 0;
+    let keys = Object.keys(this.batch);
+    for (let key of keys) {
+      if (key <= quote) {
+        if (this.batch[key].sell) countSell++;
+        if (this.batch[key].buy) countBuy++;
+      }
+    }
+    return countSell - countBuy;
+  }
+  Stack.prototype.getBuyAbove = function(quote) {
+    let countSell = countBuy = 0;
+    let trade = undefined;
+    let keys = Object.keys(this.batch);
+    for (let key of keys) {
+      if (key > quote) {
+        if (this.batch[key].sell) countSell++;
+        if (this.batch[key].buy) {
+          countBuy++;
+          if (!trade || trade.open.y > this.batch[key].buy.open.y) {
+            trade = this.batch[key].buy;
+          }
+        }
+      }
+    }
+    if (countBuy > countSell) return trade;
+    return undefined;
+  }
+  Stack.prototype.getSellBelow = function(quote) {
+    let countSell = countBuy = 0;
+    let trade = undefined;
+    let keys = Object.keys(this.batch);
+    for (let key of keys) {
+      if (key < quote) {
+        if (this.batch[key].sell) {
+          countSell++;
+          if (!trade || trade.open.y < this.batch[key].sell.open.y) {
+            trade = this.batch[key].sell;
+          }
+          if (this.batch[key].buy) countBuy++;
+        }
+      }
+    }
+    if (countSell > countBuy) return trade;
+    return undefined;
   }
 
   // Strategy ###########################################
@@ -634,11 +728,8 @@
     let direction = undefined;
     let i = 0;
     for (i = 1; i < quotes.length; i++) {
-      //for (i = 1; i < 719; i++) {
-      // console.log("index: " + i);
       trades.updateEquity(quotes[i]);
-
-      // buy
+      // buy ------------------
       if (quotes[i] > quotes[i - 1]) {
         if (direction == 'sell') {
           // turn around
@@ -649,22 +740,22 @@
             stack.deleteAll();
           }
         }
-        trade = stack.getTradeAt(quotes[i])
+        trade = stack.getSellAt(quotes[i])
         // close opposite trade at same quote
-        if (trade && trade.type == "sell") {
+        if (trade) {
           trades.close(trade, i, quotes[i]);
           stack.delete(trade);
-          trade = undefined;
         }
+        trade = stack.getBuyAt(quotes[i])
         // set buy trade
-        if (!trade || trade && !trade.type == "buy") {
+        if (!trade) {
           trade = trades.buy(i, quotes[i]);
           stack.add(trade);
         }
         // set trade direction
         direction = 'buy';
       }
-      // sell  
+      // sell ------------------
       if (quotes[i] < quotes[i - 1]) {
         if (direction == 'buy') {
           // turn around
@@ -675,22 +766,24 @@
             stack.deleteAll();
           }
         }
-        trade = stack.getTradeAt(quotes[i])
+        trade = stack.getBuyAt(quotes[i])
         // close opposite trade at same quote
-        if (trade && trade.type == "buy") {
+        if (trade) {
           trades.close(trade, i, quotes[i]);
           stack.delete(trade);
-          trade = undefined;
         }
+        trade = stack.getSellAt(quotes[i])
         // set sell trade
-        if (!trade || trade && !trade.type == "sell") {
+        if (!trade) {
           trade = trades.sell(i, quotes[i]);
           stack.add(trade);
         }
         // set trade direction
         direction = 'sell';
       }
+      // console.log("index: " + i + ", quote: " + quotes[i]);
       // console.log(stack);
+      // console.log('.');
     }
     // close all open trades at end of quotes
     trades.closeAllOpenTrades(i - 1, quotes[i - 1]);
@@ -698,27 +791,23 @@
     return trades;
   }
 
-  function strategyStack2(quotes) {
+  function strategyStack4(quotes) {
     stack = new Stack();
     trades = new Trades();
     tradeID = 0;
     let tradeCountMaxOpen = 40;
     let tradeCountOpen = 0;
-    let trade = prevTrade = lastTrade = undefined;
+    let trade = undefined;
+    let weight = 0;
     let minProfit = 0;
     let direction = undefined;
-    let isNewTrade = false;
-    let buyOpenNoPair = undefined;
-    let sellOpenNoPair = undefined;
     let i = 0;
     for (i = 1; i < quotes.length; i++) {
-      //for (i = 1; i < 719; i++) {
-      // console.log("index: " + i);
       trades.updateEquity(quotes[i]);
-      // buy --------------------------
+      // buy ------------------
       if (quotes[i] > quotes[i - 1]) {
-        // turn around
         if (direction == 'sell') {
+          // turn around
           // check exit
           if ((trades.equity[i] + trades.balance.total) > minProfit) {
             trades.closeAllOpenTrades(i, quotes[i]);
@@ -726,59 +815,32 @@
             stack.deleteAll();
           }
         }
-        // check trades
-        isNewTrade = false;
-        sellOpenNoPair = undefined;
-        trade = stack.getTradeAt(quotes[i]);
+        // close opposite trade at same quote if any
+        trade = stack.getSellAt(quotes[i])
         if (trade) {
-          // close trade at same quote
           trades.close(trade, i, quotes[i]);
           stack.delete(trade);
-          // check pair trade
-          if (trade.pair) {
-            // clear pair trade
-            trade.pair.pair = undefined;
-            if (trade.type == 'sell') {
-              // opposite trade
-              // no buy trade
-              // trade = undefined;
-              isNewTrade = false;
-            }
-            if (trade.type == 'buy') {
-              // buy trade in stack  
-              // update buy trade
-              isNewTrade = true;
-            }
-          }
-          else {
-            // no pair
-            // new buy trade
-            isNewTrade = true;
-          }
         }
-        else {
-          // no trade in stack
-          // new buy trade
-          isNewTrade = true;
-        }
-        // new buy trade
-        if (isNewTrade) {
-          trade = trades.buy(i, quotes[i]);
-          stack.add(trade);
-          // find sell pair trade
-          sellOpenNoPair = trades.getSellOpenNoPairFor(trade);
-          if (sellOpenNoPair) {
-            trade.pair = sellOpenNoPair;
-            sellOpenNoPair.pair = trade;
+        trade = stack.getBuyAt(quotes[i])
+        if (!trade) {
+          weight = stack.getWeightBuyAbove(quotes[i]);
+          if (weight > 0) {
+            // buy > sell 
+            // no buy
+          } else {
+            // buy <= sell
+            // set buy trade
+            trade = trades.buy(i, quotes[i]);
+            stack.add(trade);
           }
         }
         // set trade direction
         direction = 'buy';
       }
-      // sell --------------------------
+      // sell ------------------
       if (quotes[i] < quotes[i - 1]) {
-        // turn around
         if (direction == 'buy') {
+          // turn around
           // check exit
           if ((trades.equity[i] + trades.balance.total) > minProfit) {
             trades.closeAllOpenTrades(i, quotes[i]);
@@ -786,62 +848,31 @@
             stack.deleteAll();
           }
         }
-        // check trades
-        isNewTrade = false;
-        buyOpenNoPair = undefined;
-        trade = stack.getTradeAt(quotes[i])
+        // close opposite trade at same quote if any
+        trade = stack.getBuyAt(quotes[i])
         if (trade) {
-          // close trade at same quote
           trades.close(trade, i, quotes[i]);
           stack.delete(trade);
-          // check pair trade
-          if (trade.pair) {
-            // clear pair trade
-            trade.pair.pair = undefined;
-            if (trade.type == "buy") {
-              // opposite trade
-              // no sell trade
-              // trade = undefined;
-              isNewTrade = false;
-            }
-            if (trade.type == "sell") {
-              // sell trade in stack 
-              // update sell trade
-              isNewTrade = true;
-            }
-          }
-          else {
-            // no pair
-            // new sell trade
-            isNewTrade = true;
-          }
         }
-        else {
-          // no trade in stack
-          // new sell trade
-          isNewTrade = true;
-        }
-        // new sell trade
-        if (isNewTrade) {
-          trade = trades.sell(i, quotes[i]);
-          stack.add(trade);
-          // find buy pair trade
-          buyOpenNoPair = trades.getBuyOpenNoPairFor(trade);
-          if (buyOpenNoPair) {
-            trade.pair = buyOpenNoPair;
-            buyOpenNoPair.pair = trade;
+        trade = stack.getSellAt(quotes[i])
+        if (!trade) {
+          weight = stack.getWeightSellBelow(quotes[i]);
+          if (weight > 0) {
+            // sell > buy
+            // no sell
+          } else {
+            // sell <=  buy
+            // set sell trade
+            trade = trades.sell(i, quotes[i]);
+            stack.add(trade);
           }
         }
         // set trade direction
         direction = 'sell';
       }
-      if (i >= 258) {
-        console.log("index: " + i);
-        console.log(stack);
-        console.log("buyOpenNoPair");
-        console.log(buyOpenNoPair);
-        console.log(".")
-      }
+      // console.log("index: " + i + ", quote: " + quotes[i]);
+      // console.log(stack);
+      // console.log('.');
     }
     // close all open trades at end of quotes
     trades.closeAllOpenTrades(i - 1, quotes[i - 1]);
@@ -849,6 +880,120 @@
     return trades;
   }
 
+  function strategyStack5(quotes) {
+    stack = new Stack();
+    trades = new Trades();
+    tradeID = 0;
+    let tradeCountMaxOpen = 40;
+    let tradeCountOpen = 0;
+    let trade = aheadTrade = behindTrade = undefined;
+    let loss = 0;
+    let minProfit = 0;
+    let direction = undefined;
+    let i = 0;
+    for (i = 1; i < quotes.length; i++) {
+      trades.updateEquity(quotes[i]);
+      // buy ------------------
+      if (quotes[i] > quotes[i - 1]) {
+        if (direction == 'sell') {
+          // turn around
+          // check exit
+          if ((trades.equity[i] + trades.balance.total) > minProfit) {
+            trades.closeAllOpenTrades(i, quotes[i]);
+            trades.balance.total = 0;
+            stack.deleteAll();
+          }
+        }
+        // close opposite trade at same quote if no loss
+        trade = stack.getSellAt(quotes[i])
+        if (trade && (!trade.loss || trade.loss <= 0)) {
+          trades.close(trade, i, quotes[i]);
+          stack.delete(trade);
+        }
+        trade = stack.getBuyAt(quotes[i])
+        if (!trade) {
+          // set new buy trade
+          trade = trades.buy(i, quotes[i]);
+          stack.add(trade);
+          // get buy above
+          aheadTrade = stack.getBuyAbove(quotes[i]);
+          if (aheadTrade) {
+            // buy > sell 
+            // delete buy above
+            trades.close(aheadTrade, i, quotes[i]);
+            stack.delete(aheadTrade);
+            // account loss
+            trade.loss = aheadTrade.open.y - quotes[i];
+            if (aheadTrade.loss) trade.loss += aheadTrade.loss;
+          }
+          // get buy below
+          behindTrade = stack.getBuyAt(quotes[i - 1]);
+          if (behindTrade && behindTrade.loss && behindTrade.loss > 0) {
+            // delete buy below
+            trades.close(behindTrade, i, quotes[i]);
+            stack.delete(behindTrade);
+            // account loss
+            trade.loss = behindTrade.loss - 1;
+          }
+        }
+        // set trade direction
+        direction = 'buy';
+      }
+      // sell ------------------
+      if (quotes[i] < quotes[i - 1]) {
+        if (direction == 'buy') {
+          // turn around
+          // check exit
+          if ((trades.equity[i] + trades.balance.total) > minProfit) {
+            trades.closeAllOpenTrades(i, quotes[i]);
+            trades.balance.total = 0;
+            stack.deleteAll();
+          }
+        }
+        // close opposite trade at same quote if any
+        trade = stack.getBuyAt(quotes[i])
+        if (trade && (!trade.loss || trade.loss <= 0)) {
+          trades.close(trade, i, quotes[i]);
+          stack.delete(trade);
+        }
+        trade = stack.getSellAt(quotes[i])
+        if (!trade) {
+          // set new sell trade
+          trade = trades.sell(i, quotes[i]);
+          stack.add(trade);
+          // get sell below
+          aheadTrade = stack.getSellBelow(quotes[i]);
+          if (aheadTrade) {
+            // sell > buy
+            // delete sell below
+            trades.close(aheadTrade, i, quotes[i]);
+            stack.delete(aheadTrade);
+            // account loss
+            trade.loss = quotes[i] - aheadTrade.open.y;
+            if (aheadTrade.loss) trade.loss += aheadTrade.loss;
+          }
+          // get sell above
+          behindTrade = stack.getSellAt(quotes[i - 1]);
+          if (behindTrade && behindTrade.loss && behindTrade.loss > 0) {
+            // delete sell above
+            trades.close(behindTrade, i, quotes[i]);
+            stack.delete(behindTrade);
+            // accout loss
+            trade.loss = behindTrade.loss - 1;
+          }
+        }
+        // set trade direction
+        direction = 'sell';
+      }
+      // console.log("index: " + i + ", quote: " + quotes[i]);
+      // console.log(stack);
+      // console.log('.');
+    }
+    // close all open trades at end of quotes
+    trades.closeAllOpenTrades(i - 1, quotes[i - 1]);
+    trades.updateEquity(quotes[i - 1]);
+    return trades;
+  }
 
   // Run  ###########################################
   let quotesCount = 1000;
@@ -866,7 +1011,10 @@
     // let trades2 = strategySimple3_1(quotes);
     // let trades2 = strategySimple3_2(quotes);
     let trades1 = strategyStack(quotes);
-    let trades2 = strategyStack2(quotes);
+    // let trades2 = strategyStack2(quotes);
+    // let trades2 = strategyStack3(quotes);
+    // let trades1 = strategyStack4(quotes);
+    let trades2 = strategyStack5(quotes);
 
     initPlot(el, quotes, trades1, trades2);
     // trimStepsQuote(stepsQuote4);

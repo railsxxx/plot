@@ -848,6 +848,317 @@
     trades.updateEquity(quotes[i - 1]);
     return trades;
   }
+  function strategyStack2(quotes) {
+    stack = new Stack();
+    trades = new Trades();
+    tradeID = 0;
+    let tradeCountMaxOpen = 40;
+    let tradeCountOpen = 0;
+    let trade = prevTrade = lastTrade = undefined;
+    let minProfit = 0;
+    let direction = undefined;
+    let isNewTrade = false;
+    let buyOpenNoPair = undefined;
+    let sellOpenNoPair = undefined;
+    let i = 0;
+    for (i = 1; i < quotes.length; i++) {
+      //for (i = 1; i < 100; i++) {
+      // console.log("index: " + i);
+      trades.updateEquity(quotes[i]);
+      // buy --------------------------
+      if (quotes[i] > quotes[i - 1]) {
+        // turn around
+        if (direction == 'sell') {
+          // check exit
+          if ((trades.equity[i] + trades.balance.total) > minProfit) {
+            trades.closeAllOpenTrades(i, quotes[i]);
+            trades.balance.total = 0;
+            stack.deleteAll();
+          }
+        }
+        // check trades
+        isNewTrade = false;
+        sellOpenNoPair = undefined;
+        trade = stack.getTradeAt(quotes[i]);
+        if (trade) {
+          // close trade at same quote
+          trades.close(trade, i, quotes[i]);
+          stack.delete(trade);
+          // check pair trade
+          if (trade.pair) {
+            // clear pair trade
+            trade.pair.pair = undefined;
+            if (trade.type == 'sell') {
+              // opposite trade
+              // no buy trade
+              // trade = undefined;
+              isNewTrade = false;
+            }
+            if (trade.type == 'buy') {
+              // buy trade in stack  
+              // update buy trade
+              isNewTrade = true;
+            }
+          }
+          else {
+            // no pair
+            // new buy trade
+            isNewTrade = true;
+          }
+        }
+        else {
+          // no trade in stack
+          // new buy trade
+          isNewTrade = true;
+        }
+        // new buy trade
+        if (isNewTrade) {
+          trade = trades.buy(i, quotes[i]);
+          stack.add(trade);
+          // find sell pair trade
+          sellOpenNoPair = trades.getSellOpenNoPairFor(trade);
+          if (sellOpenNoPair) {
+            trade.pair = sellOpenNoPair;
+            sellOpenNoPair.pair = trade;
+          }
+        }
+        // set trade direction
+        direction = 'buy';
+      }
+      // sell --------------------------
+      if (quotes[i] < quotes[i - 1]) {
+        // turn around
+        if (direction == 'buy') {
+          // check exit
+          if ((trades.equity[i] + trades.balance.total) > minProfit) {
+            trades.closeAllOpenTrades(i, quotes[i]);
+            trades.balance.total = 0;
+            stack.deleteAll();
+          }
+        }
+        // check trades
+        isNewTrade = false;
+        buyOpenNoPair = undefined;
+        trade = stack.getTradeAt(quotes[i])
+        if (trade) {
+          // close trade at same quote
+          trades.close(trade, i, quotes[i]);
+          stack.delete(trade);
+          // check pair trade
+          if (trade.pair) {
+            // clear pair trade
+            trade.pair.pair = undefined;
+            if (trade.type == "buy") {
+              // opposite trade
+              // no sell trade
+              // trade = undefined;
+              isNewTrade = false;
+            }
+            if (trade.type == "sell") {
+              // sell trade in stack 
+              // update sell trade
+              isNewTrade = true;
+            }
+          }
+          else {
+            // no pair
+            // new sell trade
+            isNewTrade = true;
+          }
+        }
+        else {
+          // no trade in stack
+          // new sell trade
+          isNewTrade = true;
+        }
+        // new sell trade
+        if (isNewTrade) {
+          trade = trades.sell(i, quotes[i]);
+          stack.add(trade);
+          // find buy pair trade
+          buyOpenNoPair = trades.getBuyOpenNoPairFor(trade);
+          if (buyOpenNoPair) {
+            trade.pair = buyOpenNoPair;
+            buyOpenNoPair.pair = trade;
+          }
+        }
+        // set trade direction
+        direction = 'sell';
+      }
+      console.log("index: " + i + ", quote: " + quotes[i]);
+      console.log(stack);
+      console.log(".")
+      // if (i >= 258) {
+      //   console.log("buyOpenNoPair");
+      //   console.log(buyOpenNoPair);
+      //   console.log(".")
+      // }
+    }
+    // close all open trades at end of quotes
+    trades.closeAllOpenTrades(i - 1, quotes[i - 1]);
+    trades.updateEquity(quotes[i - 1]);
+    return trades;
+  }
+
+  function strategyStack3(quotes) {
+    stack = new Stack();
+    trades = new Trades();
+    tradeID = 0;
+    let tradeCountMaxOpen = 40;
+    let tradeCountOpen = 0;
+    let trade = oppTrade = lastTrade = pairTrade = pairOppTrade = undefined;
+    let minProfit = 0;
+    let direction = undefined;
+    let isNewTrade = false;
+    let buyOpenNoPair = undefined;
+    let sellOpenNoPair = undefined;
+    let i = 0;
+    for (i = 1; i < quotes.length; i++) {
+      //for (i = 1; i < 100; i++) {
+      // console.log("index: " + i);
+      trades.updateEquity(quotes[i]);
+      // buy --------------------------
+      if (quotes[i] > quotes[i - 1]) {
+
+        // first check for exit
+        if (direction == 'sell') {
+          // check exit
+          if ((trades.equity[i] + trades.balance.total) > minProfit) {
+            trades.closeAllOpenTrades(i, quotes[i]);
+            trades.balance.total = 0;
+            stack.deleteAll();
+          }
+        }
+        // check stack for buy trade 
+        trade = stack.getBuyAt(quotes[i]);
+        if (!trade) {
+          // new buy trade
+          trade = trades.buy(i, quotes[i]);
+          stack.add(trade);
+          // turn around
+          if (direction == 'sell') {
+            // set pair last sell trade
+            lastTrade = stack.getSellAt(quotes[i - 1]);
+            if (lastTrade && !lastTrade.pair) {
+              lastTrade.pair = trade;
+              trade.pair = lastTrade;
+            }
+          }
+          // straight ahead or turn around 
+          // check sell trade same level
+          oppTrade = stack.getSellAt(quotes[i]);
+          if (oppTrade && !oppTrade.pair) {
+            // sell trade no pair, close sell trade
+            trades.close(oppTrade, i, quotes[i]);
+            stack.delete(oppTrade);
+          }
+        } else {
+          // buy trade in stack
+          // straight ahead, no turn around
+          if (direction == 'buy') {
+            if (trade.pair) {
+              // pair of buy trade in stack
+              pairTrade = trade.pair;
+              // opp trade of pair trade
+              pairOppTrade = stack.getBuyAt(pairTrade.open.y);
+              if (pairOppTrade && !pairOppTrade.pair) {
+                // pair opp trade no pair, free buy
+                // close pair opp trade
+                trades.close(pairOppTrade, i, quotes[i]);
+                stack.delete(pairOppTrade);
+                // close pair trade
+                trades.close(pairTrade, i, quotes[i]);
+                stack.delete(pairTrade);
+                // close buy trade in stack
+                trades.close(trade, i, quotes[i]);
+                stack.delete(trade);
+                // new buy trade
+                trade = trades.buy(i, quotes[i]);
+                stack.add(trade);
+              }
+            }
+          }
+        }
+        // set trade direction
+        direction = 'buy';
+      }
+      // sell --------------------------
+      if (quotes[i] < quotes[i - 1]) {
+        // first check for exit
+        if (direction == 'buy') {
+          // check exit
+          if ((trades.equity[i] + trades.balance.total) > minProfit) {
+            trades.closeAllOpenTrades(i, quotes[i]);
+            trades.balance.total = 0;
+            stack.deleteAll();
+          }
+        }
+        // check stack for sell trade
+        trade = stack.getSellAt(quotes[i]);
+        if (!trade) {
+          // new sell trade
+          trade = trades.sell(i, quotes[i]);
+          stack.add(trade);
+          // turn around
+          if (direction == 'buy') {
+            // set pair last buy trade
+            lastTrade = stack.getBuyAt(quotes[i - 1]);
+            if (lastTrade && !lastTrade.pair) {
+              lastTrade.pair = trade;
+              trade.pair = lastTrade;
+            }
+          }
+          // straight ahead or turn around 
+          // check buy trade same level
+          oppTrade = stack.getBuyAt(quotes[i]);
+          if (oppTrade && !oppTrade.pair) {
+            // buy trade no pair, close buy trade
+            trades.close(oppTrade, i, quotes[i]);
+            stack.delete(oppTrade);
+          }
+        } else {
+          // sell trade in stack
+          // straight ahead, no turn around
+          if (direction == 'sell') {
+            if (trade.pair) {
+              // pair of sell trade in stack
+              pairTrade = trade.pair;
+              // opp trade of pair trade
+              pairOppTrade = stack.getSellAt(pairTrade.open.y);
+              if (pairOppTrade && !pairOppTrade.pair) {
+                // pair opp trade no pair, free sell
+                // close pair opp trade
+                trades.close(pairOppTrade, i, quotes[i]);
+                stack.delete(pairOppTrade);
+                // close pair trade
+                trades.close(pairTrade, i, quotes[i]);
+                stack.delete(pairTrade);
+                // close sell trade in stack
+                trades.close(trade, i, quotes[i]);
+                stack.delete(trade);
+                // new sell trade
+                trade = trades.sell(i, quotes[i]);
+                stack.add(trade);
+              }
+            }
+          }
+        }
+        // set trade direction
+        direction = 'sell';
+      }
+      console.log("index: " + i);
+      console.log(stack);
+      if (i >= 258) {
+        console.log("buyOpenNoPair");
+        console.log(buyOpenNoPair);
+        console.log(".")
+      }
+    }
+    // close all open trades at end of quotes
+    trades.closeAllOpenTrades(i - 1, quotes[i - 1]);
+    trades.updateEquity(quotes[i - 1]);
+    return trades;
+  }
 
 
   // Run  ###########################################
